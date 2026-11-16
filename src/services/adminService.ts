@@ -10,28 +10,21 @@ export const orderStatuses = [
 
 export type OrderStatus = (typeof orderStatuses)[number];
 
-export const verifyAdminLogin = async (username: string, password: string) => {
-  const { data, error } = await supabase
-    .from('admin_credentials')
-    .select('*')
-    .eq('username', username)
-    .eq('password', password)
-    .single();
-
-  if (error || !data) {
-    console.error('Login error:', error);
-    return false;
-  }
-
-  return true;
-};
-
 // Fetch all orders (for admin view)
 export const fetchAllOrders = async () => {
   const { data, error } = await supabase
     .from('orders')
     .select(`
-      *,
+      id,
+      created_at,
+      status,
+      customer_name,
+      customer_phone,
+      customer_email,
+      delivery_method,
+      delivery_address,
+      delivery_notes,
+      total,
       order_items (
         id,
         meal_name,

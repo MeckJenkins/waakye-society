@@ -2,12 +2,17 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { ChangeEvent, FormEvent } from 'react';
 import { useCart } from '@/context/useCart';
-import { createOrder, updateOrderPayment } from '@/services/orderService';
-import { initializePaystackPayment, generatePaystackReference, verifyPayment } from '@/services/paystackService';
+import {
+  createOrder,
+  ensureTrackingTokenStorageAvailable,
+  saveOrderTrackingToken,
+  type CreatedOrder,
+} from '@/services/orderService';
+import { initializePayment } from '@/services/paystackService';
 
 const CheckoutPage = () => {
   const navigate = useNavigate();
-  const { cartItems, totalPrice, clearCart } = useCart();
+  const { cartItems, totalPrice } = useCart();
 
   const [formData, setFormData] = useState({
     customerName: '',
@@ -20,6 +25,7 @@ const CheckoutPage = () => {
   const [deliveryMethod, setDeliveryMethod] = useState<'delivery' | 'pickup'>('delivery');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [preparedOrder, setPreparedOrder] = useState<CreatedOrder | null>(null);
 
   // Redirect to menu if cart is empty
   if (cartItems.length === 0) {
@@ -55,60 +61,32 @@ const CheckoutPage = () => {
     }
 
     setIsSubmitting(true);
-
     try {
-      // 1. Create the order first (status: pending, payment_status: pending)
-      const orderId = await createOrder({
-        ...formData,
-        deliveryMethod,
-        subtotal: totalPrice,
-        total: totalPrice,
-        cartItems,
-      });
+      if (!preparedOrder) {
+        ensureTrackingTokenStorageAvailable();
+        const order = await createOrder({
+          ...formData,
+          deliveryMethod,
+          cartItems,
+        });
+        saveOrderTrackingToken(order.orderId, order.trackingToken);
+        setPreparedOrder(order);
+        setError(null);
+        return;
+      }
 
-      // 2. Generate unique Paystack reference
-      const reference = generatePaystackReference();
-
-      // 3. Open Paystack payment popup
-      initializePaystackPayment({
-        email: formData.customerEmail,
-        amount: totalPrice,
-        reference,
-        customerName: formData.customerName,
-        customerPhone: formData.customerPhone,
-        onSuccess: async (response) => {
-          try {
-            // 4. Verify payment on the server (SECURE!)
-            await verifyPayment(response.reference);
-
-            // 5. Update order with payment details
-            await updateOrderPayment(orderId, response.reference, 'paystack');
-
-            // 6. Clear cart and redirect to success
-            clearCart();
-            navigate(`/order-success?id=${orderId}`);
-          } catch (verifyError: unknown) {
-            console.error('Payment verification failed:', verifyError);
-            const details =
-              verifyError instanceof Error ? ` ${verifyError.message}` : '';
-            setError(
-              `Payment was made but verification failed.${details} Please contact support with reference: ${response.reference}`,
-            );
-            setIsSubmitting(false);
-          }
-        },
-        onClose: () => {
-          // User closed the payment popup without paying
-          setError('Payment was cancelled. Your order is pending. Please try again or contact us.');
-          setIsSubmitting(false);
-        },
-      });
+      const payment = await initializePayment(
+        preparedOrder.orderId,
+        preparedOrder.trackingToken,
+      );
+      window.location.assign(payment.authorizationUrl);
     } catch (err: unknown) {
       setError(
         err instanceof Error
           ? err.message
           : 'An unexpected error occurred. Please try again.',
       );
+    } finally {
       setIsSubmitting(false);
     }
   };
@@ -134,42 +112,49 @@ const CheckoutPage = () => {
               </div>
             )}
 
-            {/* Delivery Method Selector */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                How would you like to receive your order?
-              </label>
-              <div className="grid grid-cols-2 gap-3">
-                <button
-                  type="button"
-                  onClick={() => setDeliveryMethod('delivery')}
-                  className={`p-4 rounded-lg border-2 transition-all ${
-                    deliveryMethod === 'delivery'
-                      ? 'border-pepper bg-pepper/5'
-                      : 'border-gray-200 hover:border-gray-300'
-                  }`}
-                >
-                  <div className="text-2xl mb-1">🚴</div>
-                  <p className="font-semibold text-waakye-dark">Delivery</p>
-                  <p className="text-xs text-gray-500">We'll bring it to you</p>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setDeliveryMethod('pickup')}
-                  className={`p-4 rounded-lg border-2 transition-all ${
-                    deliveryMethod === 'pickup'
-                      ? 'border-pepper bg-pepper/5'
-                      : 'border-gray-200 hover:border-gray-300'
-                  }`}
-                >
-                  <div className="text-2xl mb-1">🏪</div>
-                  <p className="font-semibold text-waakye-dark">Pickup</p>
-                  <p className="text-xs text-gray-500">Collect from us</p>
-                </button>
+            {preparedOrder && (
+              <div className="rounded-lg bg-leaf/10 p-4 text-sm text-leaf" role="status">
+                Your order is prepared with a server-confirmed total of GH₵ {preparedOrder.total.toFixed(2)}.
+                Review the amount before continuing to Paystack.
               </div>
-            </div>
+            )}
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <fieldset disabled={preparedOrder !== null} className="space-y-6 border-0 p-0">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  How would you like to receive your order?
+                </label>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setDeliveryMethod('delivery')}
+                    className={`p-4 rounded-lg border-2 transition-all ${
+                      deliveryMethod === 'delivery'
+                        ? 'border-pepper bg-pepper/5'
+                        : 'border-gray-200 hover:border-gray-300'
+                    }`}
+                  >
+                    <div className="text-2xl mb-1">🚴</div>
+                    <p className="font-semibold text-waakye-dark">Delivery</p>
+                    <p className="text-xs text-gray-500">We'll bring it to you</p>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDeliveryMethod('pickup')}
+                    className={`p-4 rounded-lg border-2 transition-all ${
+                      deliveryMethod === 'pickup'
+                        ? 'border-pepper bg-pepper/5'
+                        : 'border-gray-200 hover:border-gray-300'
+                    }`}
+                  >
+                    <div className="text-2xl mb-1">🏪</div>
+                    <p className="font-semibold text-waakye-dark">Pickup</p>
+                    <p className="text-xs text-gray-500">Collect from us</p>
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Full Name *</label>
                 <input
@@ -192,9 +177,9 @@ const CheckoutPage = () => {
                   placeholder="024 123 4567"
                 />
               </div>
-            </div>
+              </div>
 
-            <div>
+              <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Email Address * <span className="text-xs text-gray-500">(required for payment)</span>
               </label>
@@ -207,9 +192,9 @@ const CheckoutPage = () => {
                 className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pepper focus:border-transparent"
                 placeholder="kwame@example.com"
               />
-            </div>
+              </div>
 
-            {deliveryMethod === 'delivery' && (
+              {deliveryMethod === 'delivery' && (
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Delivery Address *</label>
                 <textarea
@@ -225,9 +210,9 @@ const CheckoutPage = () => {
                   Delivery fee will be negotiated with the rider.
                 </p>
               </div>
-            )}
+              )}
 
-            <div>
+              <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Order Notes (Optional)</label>
               <textarea
                 name="deliveryNotes"
@@ -237,7 +222,8 @@ const CheckoutPage = () => {
                 className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pepper focus:border-transparent resize-none"
                 placeholder="e.g., Call when you arrive, extra shito please"
               />
-            </div>
+              </div>
+            </fieldset>
           </div>
 
           {/* RIGHT: Order Summary */}
@@ -274,7 +260,7 @@ const CheckoutPage = () => {
             <div className="border-t pt-4 space-y-2">
               <div className="flex justify-between text-gray-600">
                 <span>Subtotal</span>
-                <span>GH₵ {totalPrice.toFixed(2)}</span>
+                <span>GH₵ {(preparedOrder?.total ?? totalPrice).toFixed(2)}</span>
               </div>
               <div className="flex justify-between text-gray-600 text-sm">
                 <span>Order Method</span>
@@ -289,8 +275,13 @@ const CheckoutPage = () => {
               )}
               <div className="flex justify-between text-xl font-bold text-waakye-dark pt-2 border-t">
                 <span>Total</span>
-                <span>GH₵ {totalPrice.toFixed(2)}</span>
+                <span>GH₵ {(preparedOrder?.total ?? totalPrice).toFixed(2)}</span>
               </div>
+              {preparedOrder && (
+                <p className="text-xs text-gray-500">
+                  Prices confirmed from the current menu and extras catalog.
+                </p>
+              )}
             </div>
 
             <button
@@ -305,7 +296,9 @@ const CheckoutPage = () => {
                 </>
               ) : (
                 <>
-                  💳 Pay GH₵ {totalPrice.toFixed(2)} with Paystack
+                  {preparedOrder
+                    ? `💳 Continue to Pay GH₵ ${preparedOrder.total.toFixed(2)} with Paystack`
+                    : `Confirm Order Total · GH₵ ${totalPrice.toFixed(2)}`}
                 </>
               )}
             </button>

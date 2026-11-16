@@ -1,14 +1,21 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
-import { getOrdersByPhone } from '@/services/orderService';
+import { useSearchParams } from 'react-router-dom';
+import {
+  getOrderByTrackingToken,
+  getOrderTrackingToken,
+} from '@/services/orderService';
 import type { TrackedOrder } from '@/services/orderService';
 
 const TrackOrderPage = () => {
-  const [phoneInput, setPhoneInput] = useState('');
-  const [orders, setOrders] = useState<TrackedOrder[]>([]);
+  const [searchParams] = useSearchParams();
+  const [orderId, setOrderId] = useState(searchParams.get('id') ?? '');
+  const [trackingToken, setTrackingToken] = useState(() =>
+    getOrderTrackingToken(searchParams.get('id') ?? '') ?? '',
+  );
+  const [order, setOrder] = useState<TrackedOrder | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [hasSearched, setHasSearched] = useState(false);
 
   const handleSearch = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -16,30 +23,24 @@ const TrackOrderPage = () => {
 
     setLoading(true);
     setError(null);
-    setOrders([]);
-    setHasSearched(true);
+    setOrder(null);
 
     try {
-      const fetchedOrders = await getOrdersByPhone(phoneInput);
-      setOrders(fetchedOrders);
-      
-      if (fetchedOrders.length === 0) {
-        setError('No orders found for this phone number. Please check and try again.');
-      }
+      setOrder(await getOrderByTrackingToken(orderId.trim(), trackingToken.trim()));
     } catch (err: unknown) {
-      console.error('Failed to search orders:', err);
+      console.error('Secure order lookup failed:', err);
       setError(
         err instanceof Error
           ? err.message
-          : 'Could not search orders right now. Please try again.',
+          : 'Could not retrieve this order. Check the order number and access code.',
       );
     } finally {
       setLoading(false);
     }
   };
 
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleString('en-GH', {
+  const formatDate = (dateString: string) =>
+    new Date(dateString).toLocaleString('en-GH', {
       timeZone: 'Africa/Accra',
       year: 'numeric',
       month: 'short',
@@ -48,7 +49,6 @@ const TrackOrderPage = () => {
       minute: '2-digit',
       hour12: true,
     });
-  };
 
   const getStatusColor = (status: string) => {
     switch (status.toLowerCase()) {
@@ -62,117 +62,108 @@ const TrackOrderPage = () => {
   };
 
   return (
-    <section className="py-12 md:py-16 bg-cream min-h-screen">
-      <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
-        
-        {/* Header */}
-        <div className="text-center mb-10">
-          <h1 className="text-3xl md:text-4xl font-heading font-bold text-waakye-dark mb-4">
+    <section className="min-h-screen bg-cream py-12 md:py-16">
+      <div className="mx-auto max-w-3xl px-4 sm:px-6 lg:px-8">
+        <div className="mb-10 text-center">
+          <h1 className="mb-4 font-heading text-3xl font-bold text-waakye-dark md:text-4xl">
             Track Your Order
           </h1>
           <p className="text-gray-600">
-            Enter the phone number you used during checkout to view your order history.
+            Enter your order number and the private access code shown after checkout.
+            A phone number alone cannot access order details.
           </p>
         </div>
 
-        {/* Search Form */}
-        <form onSubmit={handleSearch} className="bg-white p-6 rounded-2xl shadow-sm mb-8">
-          <div className="flex flex-col sm:flex-row gap-4">
+        <form onSubmit={handleSearch} className="mb-8 space-y-4 rounded-2xl bg-white p-6 shadow-sm">
+          <div>
+            <label htmlFor="tracking-order-id" className="mb-2 block text-sm font-medium text-gray-700">
+              Order number
+            </label>
             <input
-              id="tracking-phone"
-              type="tel"
-              value={phoneInput}
-              onChange={(event) => setPhoneInput(event.target.value)}
-              placeholder="e.g., 0241234567"
-              autoComplete="tel"
-              aria-label="Phone number used at checkout"
-              aria-describedby={error ? 'tracking-error' : undefined}
-              className="flex-grow px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pepper focus:border-transparent"
+              id="tracking-order-id"
+              type="text"
+              value={orderId}
+              onChange={(event) => setOrderId(event.target.value)}
+              autoComplete="off"
               required
+              className="w-full rounded-lg border border-gray-300 px-4 py-3 focus:border-transparent focus:ring-2 focus:ring-pepper"
             />
-            <button
-              type="submit"
-              disabled={loading}
-              className="px-8 py-3 bg-pepper hover:bg-pepper-light disabled:bg-gray-400 text-white font-semibold rounded-lg shadow-md transition-colors flex items-center justify-center gap-2"
-            >
-              {loading ? (
-                <>
-                  <div className="h-5 w-5 animate-spin rounded-full border-b-2 border-white" aria-hidden="true" />
-                  Searching...
-                </>
-              ) : (
-                'Track Order'
-              )}
-            </button>
           </div>
+          <div>
+            <label htmlFor="tracking-access-code" className="mb-2 block text-sm font-medium text-gray-700">
+              Private access code
+            </label>
+            <input
+              id="tracking-access-code"
+              type="text"
+              value={trackingToken}
+              onChange={(event) => setTrackingToken(event.target.value)}
+              autoComplete="off"
+              spellCheck={false}
+              required
+              className="w-full rounded-lg border border-gray-300 px-4 py-3 font-mono focus:border-transparent focus:ring-2 focus:ring-pepper"
+            />
+          </div>
+          <button
+            type="submit"
+            disabled={loading}
+            className="flex w-full items-center justify-center gap-2 rounded-lg bg-pepper px-8 py-3 font-semibold text-white shadow-md transition-colors hover:bg-pepper-light disabled:bg-gray-400"
+          >
+            {loading ? 'Searching...' : 'Track Order'}
+          </button>
         </form>
 
-        {/* Error Message */}
         {error && (
-          <div id="tracking-error" className="mb-6 rounded-lg bg-pepper/10 p-4 text-center text-pepper" role="alert">
+          <div className="mb-6 rounded-lg bg-pepper/10 p-4 text-center text-pepper" role="alert">
             {error}
           </div>
         )}
 
-        {/* Orders List */}
-        {hasSearched && !loading && orders.length > 0 && (
-          <div className="space-y-6">
-            <h2 className="text-xl font-heading font-bold text-waakye-dark">
-              Found {orders.length} Order{orders.length > 1 ? 's' : ''}
-            </h2>
-            
-            {orders.map((order) => (
-              <div key={order.id} className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
-                {/* Order Header */}
-                <div className="bg-gray-50 p-4 border-b border-gray-100 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
-                  <div>
-                    <p className="text-xs text-gray-500 uppercase tracking-wide">Order ID</p>
-                    <p className="font-mono font-bold text-waakye-dark">
-                      #{order.id.slice(0, 8).toUpperCase()}
-                    </p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-xs text-gray-500 uppercase tracking-wide">Date</p>
-                    <p className="font-medium text-gray-800">{formatDate(order.created_at)}</p>
-                  </div>
-                  <span className={`rounded-full px-3 py-1 text-xs font-bold uppercase ${getStatusColor(order.status)}`}>
-                    {order.status.replaceAll('_', ' ')}
-                  </span>
-                </div>
-
-                {/* Order Items */}
-                <div className="p-4 space-y-4">
-                  {order.order_items.map((item) => (
-                    <div key={item.id} className="flex items-start justify-between border-b border-gray-50 pb-3 last:border-0 last:pb-0">
-                      <div className="flex-1">
-                        <p className="font-semibold text-waakye-dark">
-                          {item.quantity}x {item.meal_name}
-                        </p>
-                        {item.extras && item.extras.length > 0 && (
-                          <p className="text-sm text-gray-500 mt-1">
-                            + {item.extras.map((extra) => `${extra.quantity}x ${extra.name}`).join(', ')}
-                          </p>
-                        )}
-                        {item.special_instructions && (
-                          <p className="text-xs text-pepper italic mt-1">
-                            Note: {item.special_instructions}
-                          </p>
-                        )}
-                      </div>
-                      <p className="font-medium text-gray-800">
-                        GH₵ {item.line_total.toFixed(2)}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-
-                {/* Order Footer */}
-                <div className="bg-gray-50 p-4 border-t border-gray-100 flex justify-between items-center">
-                  <span className="text-gray-600 font-medium">Total Paid</span>
-                  <span className="text-xl font-bold text-pepper">GH₵ {order.total.toFixed(2)}</span>
-                </div>
+        {order && (
+          <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
+            <div className="flex flex-col items-start justify-between gap-2 border-b border-gray-100 bg-gray-50 p-4 sm:flex-row sm:items-center">
+              <div>
+                <p className="text-xs uppercase tracking-wide text-gray-500">Order number</p>
+                <p className="font-mono font-bold text-waakye-dark">
+                  #{order.id.slice(0, 8).toUpperCase()}
+                </p>
               </div>
-            ))}
+              <div className="sm:text-right">
+                <p className="text-xs uppercase tracking-wide text-gray-500">Date</p>
+                <p className="font-medium text-gray-800">{formatDate(order.created_at)}</p>
+              </div>
+              <span className={`rounded-full px-3 py-1 text-xs font-bold uppercase ${getStatusColor(order.status)}`}>
+                {order.status.replaceAll('_', ' ')}
+              </span>
+            </div>
+
+            <div className="space-y-4 p-4">
+              {order.order_items.map((item) => (
+                <div key={item.id} className="flex items-start justify-between border-b border-gray-50 pb-3 last:border-0 last:pb-0">
+                  <div className="flex-1">
+                    <p className="font-semibold text-waakye-dark">
+                      {item.quantity}x {item.meal_name}
+                    </p>
+                    {item.extras.length > 0 && (
+                      <p className="mt-1 text-sm text-gray-500">
+                        + {item.extras.map((extra) => `${extra.quantity}x ${extra.name}`).join(', ')}
+                      </p>
+                    )}
+                    {item.special_instructions && (
+                      <p className="mt-1 text-xs italic text-pepper">
+                        Note: {item.special_instructions}
+                      </p>
+                    )}
+                  </div>
+                  <p className="font-medium text-gray-800">GH₵ {item.line_total.toFixed(2)}</p>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex items-center justify-between border-t border-gray-100 bg-gray-50 p-4">
+              <span className="font-medium text-gray-600">Total</span>
+              <span className="text-xl font-bold text-pepper">GH₵ {order.total.toFixed(2)}</span>
+            </div>
           </div>
         )}
       </div>

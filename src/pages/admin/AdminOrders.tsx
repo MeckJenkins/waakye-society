@@ -33,8 +33,6 @@ interface Order {
   delivery_method?: DeliveryMethod | null;
   delivery_address: string;
   delivery_notes: string | null;
-  subtotal: number;
-  delivery_fee: number;
   total: number;
   status: OrderStatus;
   created_at: string;

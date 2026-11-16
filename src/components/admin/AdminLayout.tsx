@@ -1,4 +1,6 @@
 import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { useState } from 'react';
+import { supabase } from '@/lib/supabase';
 
 interface AdminLayoutProps {
   children: React.ReactNode;
@@ -7,6 +9,7 @@ interface AdminLayoutProps {
 const AdminLayout = ({ children }: AdminLayoutProps) => {
   const location = useLocation();
   const navigate = useNavigate();
+  const [logoutError, setLogoutError] = useState<string | null>(null);
 
   const navItems = [
     { name: 'Dashboard', href: '/admin/dashboard', icon: '📊' },
@@ -14,10 +17,15 @@ const AdminLayout = ({ children }: AdminLayoutProps) => {
     { name: 'Menu', href: '/admin/menu', icon: '🍽️' },
   ];
 
-  const handleLogout = () => {
-    sessionStorage.removeItem('isAdminLoggedIn');
-    sessionStorage.removeItem('adminUsername');
-    navigate('/admin/login');
+  const handleLogout = async () => {
+    setLogoutError(null);
+    const { error } = await supabase.auth.signOut();
+    if (error) {
+      console.error('Failed to sign out:', error);
+      setLogoutError('Could not sign out. Please try again.');
+      return;
+    }
+    navigate('/admin/login', { replace: true });
   };
 
   return (
@@ -56,6 +64,11 @@ const AdminLayout = ({ children }: AdminLayoutProps) => {
 
         {/* Footer */}
         <div className="p-4 border-t border-waakye-light/30 space-y-2">
+          {logoutError && (
+            <p className="rounded-lg bg-pepper/10 p-2 text-sm text-pepper" role="alert">
+              {logoutError}
+            </p>
+          )}
           <Link
             to="/"
             className="flex items-center gap-3 px-4 py-2 text-gray-300 hover:text-white transition-colors rounded-lg hover:bg-waakye-light/20"

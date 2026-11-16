@@ -1,11 +1,11 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { verifyAdminLogin } from '@/services/adminService';
+import { supabase } from '@/lib/supabase';
 
 const AdminLogin = () => {
   const navigate = useNavigate();
-  const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -20,14 +20,36 @@ const AdminLogin = () => {
     setLoading(true);
 
     try {
-      const isValid = await verifyAdminLogin(username, password);
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password,
+      });
 
-      if (isValid) {
-        sessionStorage.setItem('isAdminLoggedIn', 'true');
-        navigate('/admin/dashboard');
-      } else {
-        setError('Invalid username or password');
+      if (signInError) {
+        setError('Invalid email or password.');
+        return;
       }
+
+      const { data: isAdmin, error: authorizationError } = await supabase.rpc('is_admin');
+      if (authorizationError) {
+        console.error('Failed to verify admin authorization:', authorizationError);
+        const { error: signOutError } = await supabase.auth.signOut();
+        if (signOutError) {
+          console.error('Failed to clear unauthorized Auth session:', signOutError);
+        }
+        setError('Could not verify administrator access. Please contact support.');
+        return;
+      }
+      if (isAdmin !== true) {
+        const { error: signOutError } = await supabase.auth.signOut();
+        if (signOutError) {
+          console.error('Failed to clear unauthorized Auth session:', signOutError);
+        }
+        setError('This account does not have administrator access.');
+        return;
+      }
+
+      navigate('/admin/dashboard', { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login failed. Please try again.');
     } finally {
@@ -53,17 +75,17 @@ const AdminLogin = () => {
           )}
 
           <div>
-            <label htmlFor="admin-username" className="mb-2 block text-sm font-medium text-gray-700">
-              Username
+            <label htmlFor="admin-email" className="mb-2 block text-sm font-medium text-gray-700">
+              Email
             </label>
             <input
-              id="admin-username"
-              type="text"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              autoComplete="username"
+              id="admin-email"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              autoComplete="email"
               className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pepper focus:border-transparent"
-              placeholder="admin"
+              placeholder="name@example.com"
               required
             />
           </div>

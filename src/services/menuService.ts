@@ -53,36 +53,6 @@ export const fetchFeaturedMenuItems = async (): Promise<MenuItem[]> => {
 };
 
 
-// Fetch all orders for a specific phone number, including their items
-export const getOrdersByPhone = async (phoneNumber: string) => {
-  // Clean the phone number (remove spaces, dashes) for consistent matching
-  const cleanPhone = phoneNumber.replace(/\s+/g, '');
-
-  const { data, error } = await supabase
-    .from('orders')
-    .select(`
-      *,
-      order_items (
-        id,
-        meal_name,
-        quantity,
-        extras,
-        special_instructions,
-        line_total
-      )
-    `)
-    .eq('customer_phone', cleanPhone)
-    .order('created_at', { ascending: false });
-
-  if (error) {
-    console.error('Error fetching orders:', error);
-    throw new Error('Failed to fetch orders. Please check the phone number and try again.');
-  }
-
-  return data || [];
-};
-
-
 // Upload an image to Supabase Storage and return the public URL
 export const uploadMenuImage = async (file: File, itemId: string) => {
   const extension = file.type === 'image/png' ? 'png' : 'jpg';

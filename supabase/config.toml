@@ -1,0 +1,4 @@
+project_id = "waakye-society"
+
+[functions.paystack-webhook]
+verify_jwt = false

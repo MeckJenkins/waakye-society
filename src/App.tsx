@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { BrowserRouter as Router, Outlet, Route, Routes } from 'react-router-dom';
 import { CartProvider } from '@/context/CartProvider';
+import { AdminAuthProvider } from '@/context/AdminAuthContext';
 import { supabase } from '@/lib/supabase';
 import ProtectedRoute from '@/components/admin/ProtectedRoute';
 import Layout from '@/components/layout/Layout';
@@ -58,22 +59,24 @@ function App() {
 
   return (
     <CartProvider>
-      <Router>
-        <Routes>
-          <Route element={<Layout><Outlet /></Layout>}>
-            <Route path="/" element={<HomePage />} />
-            <Route path="/menu" element={<MenuPage />} />
-            <Route path="/contact" element={<ContactPage />} />
-            <Route path="/checkout" element={<CheckoutPage />} />
-            <Route path="/order-success" element={<OrderSuccessPage />} />
-            <Route path="/track-order" element={<TrackOrderPage />} />
-          </Route>
-          <Route path="/admin/login" element={<AdminLogin />} />
-          <Route path="/admin/dashboard" element={<ProtectedRoute><AdminDashboard /></ProtectedRoute>} />
-          <Route path="/admin/orders" element={<ProtectedRoute><AdminOrders /></ProtectedRoute>} />
-          <Route path="/admin/menu" element={<ProtectedRoute><AdminMenu /></ProtectedRoute>} />
-        </Routes>
-      </Router>
+      <AdminAuthProvider>
+        <Router>
+          <Routes>
+            <Route element={<Layout><Outlet /></Layout>}>
+              <Route path="/" element={<HomePage />} />
+              <Route path="/menu" element={<MenuPage />} />
+              <Route path="/contact" element={<ContactPage />} />
+              <Route path="/checkout" element={<CheckoutPage />} />
+              <Route path="/order-success" element={<OrderSuccessPage />} />
+              <Route path="/track-order" element={<TrackOrderPage />} />
+            </Route>
+            <Route path="/admin/login" element={<AdminLogin />} />
+            <Route path="/admin/dashboard" element={<ProtectedRoute><AdminDashboard /></ProtectedRoute>} />
+            <Route path="/admin/orders" element={<ProtectedRoute><AdminOrders /></ProtectedRoute>} />
+            <Route path="/admin/menu" element={<ProtectedRoute><AdminMenu /></ProtectedRoute>} />
+          </Routes>
+        </Router>
+      </AdminAuthProvider>
     </CartProvider>
   );
 }
